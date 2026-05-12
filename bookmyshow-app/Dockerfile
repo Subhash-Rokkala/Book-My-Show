@@ -1,11 +1,11 @@
-FROM node:20-alpine AS builder
+FROM node:16-alpine AS builder
 
 WORKDIR /app
 
-# 🔥 FIX for OpenSSL issue
 ENV NODE_OPTIONS=--openssl-legacy-provider
 
 COPY package.json package-lock.json ./
+
 RUN npm install
 
 COPY . .
@@ -13,7 +13,7 @@ COPY . .
 RUN npm run build
 
 
-FROM node:20-alpine
+FROM node:16-alpine
 
 WORKDIR /app
 
