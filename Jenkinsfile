@@ -8,8 +8,6 @@ pipeline {
 
     environment {
         SCANNER_HOME = tool 'sonar-scanner'
-        IMAGE_NAME = "subhashrokkala/bms:latest"
-        CONTAINER_NAME = "bms"
     }
 
     stages {
@@ -50,18 +48,11 @@ pipeline {
             }
         }
 
-        // OPTIONAL
-        // Comment this stage if SonarQube blocks pipeline
-
         stage('Quality Gate') {
             steps {
 
                 script {
-
-                    timeout(time: 2, unit: 'MINUTES') {
-
-                        waitForQualityGate abortPipeline: false
-                    }
+                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token'
                 }
             }
         }
@@ -75,11 +66,8 @@ pipeline {
                 ls -la
 
                 if [ -f package.json ]; then
-
-                    rm -rf node_modules
-
-                    npm install --legacy-peer-deps
-
+                    rm -rf node_modules package-lock.json
+                    npm install
                 else
                     echo "package.json not found!"
                     exit 1
@@ -90,10 +78,7 @@ pipeline {
 
         stage('Trivy FS Scan') {
             steps {
-
-                sh '''
-                trivy fs . > trivyfs.txt
-                '''
+                sh 'trivy fs . > trivyfs.txt'
             }
         }
 
@@ -111,13 +96,13 @@ pipeline {
                         echo "Building Docker image..."
 
                         docker build --no-cache \
-                        -t $IMAGE_NAME \
+                        -t subhashrokkala/bms:latest \
                         -f bookmyshow-app/Dockerfile \
                         bookmyshow-app
 
                         echo "Pushing Docker image..."
 
-                        docker push $IMAGE_NAME
+                        docker push subhashrokkala/bms:latest
                         '''
                     }
                 }
@@ -126,10 +111,7 @@ pipeline {
 
         stage('Trivy Image Scan') {
             steps {
-
-                sh '''
-                trivy image $IMAGE_NAME > trivyimage.txt
-                '''
+                sh 'trivy image subhashrokkala/bms:latest > trivyimage.txt'
             }
         }
 
@@ -139,37 +121,26 @@ pipeline {
                 sh '''
                 echo "Stopping old container..."
 
-                docker stop $CONTAINER_NAME || true
-
-                docker rm $CONTAINER_NAME || true
-
-                echo "Removing old image..."
-
-                docker rmi $IMAGE_NAME || true
-
-                echo "Pulling latest image..."
-
-                docker pull $IMAGE_NAME
+                docker stop bms || true
+                docker rm bms || true
 
                 echo "Running new container..."
 
                 docker run -d \
                 --restart=always \
-                --name $CONTAINER_NAME \
+                --name bms \
                 -p 3000:3000 \
-                $IMAGE_NAME
+                subhashrokkala/bms:latest
 
                 echo "Checking running containers..."
 
                 docker ps -a
 
-                echo "Waiting for app startup..."
+                echo "Fetching container logs..."
 
-                sleep 15
+                sleep 10
 
-                echo "Container logs..."
-
-                docker logs $CONTAINER_NAME
+                docker logs bms
                 '''
             }
         }
@@ -177,21 +148,21 @@ pipeline {
 
     post {
 
-        success {
+        always {
 
             emailext(
                 attachLog: true,
 
-                subject: "SUCCESS: ${env.JOB_NAME} Build #${env.BUILD_NUMBER}",
+                subject: "${currentBuild.result}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
 
                 body: """
-                <h2>Build Successful</h2>
+                <h2>Jenkins Build Report</h2>
 
                 <p><b>Project:</b> ${env.JOB_NAME}</p>
 
                 <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
 
-                <p><b>Status:</b> SUCCESS</p>
+                <p><b>Status:</b> ${currentBuild.result}</p>
 
                 <p><b>Build URL:</b>
                 <a href="${env.BUILD_URL}">
@@ -202,32 +173,6 @@ pipeline {
                 to: 'mr.siddu1432@gmail.com',
 
                 attachmentsPattern: 'trivyfs.txt,trivyimage.txt'
-            )
-        }
-
-        failure {
-
-            emailext(
-                attachLog: true,
-
-                subject: "FAILED: ${env.JOB_NAME} Build #${env.BUILD_NUMBER}",
-
-                body: """
-                <h2>Build Failed</h2>
-
-                <p><b>Project:</b> ${env.JOB_NAME}</p>
-
-                <p><b>Build Number:</b> ${env.BUILD_NUMBER}</p>
-
-                <p><b>Status:</b> FAILED</p>
-
-                <p><b>Check Console Output:</b>
-                <a href="${env.BUILD_URL}">
-                ${env.BUILD_URL}
-                </a></p>
-                """,
-
-                to: 'mr.siddu1432@gmail.com'
             )
         }
     }
