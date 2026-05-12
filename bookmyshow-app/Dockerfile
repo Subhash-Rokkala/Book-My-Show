@@ -1,11 +1,11 @@
-# ---------- BUILD STAGE ----------
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# 🔥 FIX for OpenSSL issue
+ENV NODE_OPTIONS=--openssl-legacy-provider
 
-# safer than npm ci for Jenkins projects
+COPY package.json package-lock.json ./
 RUN npm install
 
 COPY . .
@@ -13,7 +13,6 @@ COPY . .
 RUN npm run build
 
 
-# ---------- RUN STAGE ----------
 FROM node:20-alpine
 
 WORKDIR /app
